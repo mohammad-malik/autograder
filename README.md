@@ -1,10 +1,10 @@
 # AI-Powered Assignment Auto-Grader
 
-An automated grading system for university assignments using LangChain and AI models (Google Gemini or OpenRouter). This tool helps TAs and instructors grade assignments with consistency and speed, especially for complex tasks like ER diagram evaluation.
+An automated grading system for university assignments using LangChain and Reasoning models (Google Gemini 2.0 Flash Thinking or Deepseek-R1 through OpenRouter). This tool helps TAs and instructors grade assignments with consistency and speed, especially for complex tasks like ER diagram evaluation.
 
 ## Features
 
-- **Multiple AI Model Support**: Use either Google's Gemini models or any model available through OpenRouter
+- **Multiple AI Model Support**: Use either Google's Gemini Reasoning model or any reasoning (or even non-reasoning) model available through OpenRouter
 - **Multi-run Grading**: Each assignment is graded multiple times (default: 10 runs) to ensure consistency
 - **Statistical Analysis**: Calculate mean, median, standard deviation, and consistency scores
 - **Multimodal Grading**: Evaluate both text submissions and images (like ER diagrams)
