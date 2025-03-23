@@ -1,4 +1,4 @@
-# AI-Powered Assignment Auto-Grader
+# AI-Powered Assignment Auto-Grader (EARLY PROTOTYPE, MAINLY FOR PERSONAL USE)
 
 An automated grading system for university assignments using LangChain and Reasoning models (Google Gemini 2.0 Flash Thinking or Deepseek-R1 through OpenRouter). This tool helps TAs and instructors grade assignments with consistency and speed, especially for complex tasks like ER diagram evaluation.
 
