@@ -109,7 +109,7 @@ The grader generates:
 | Parameter | Description | Default Value |
 |-----------|-------------|---------------|
 | Provider | AI model provider (gemini/openrouter) | openrouter |
-| Model (Gemini) | Gemini model name | gemini-2.0-flash-thinking-01-21 |
+| Model (Gemini) | Gemini model name | gemini-2.0-flash-thinking-exp-01-21 |
 | Model (OpenRouter) | OpenRouter model identifier | deepseek/deepseek-r1:free |
 | Temperature | Controls randomness (0.0-1.0) | 0.1 |
 | Runs | Number of grading iterations per question | 10 |

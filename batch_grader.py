@@ -7,6 +7,8 @@ using the AssignmentGrader class to evaluate each submission.
 
 Each question is graded multiple times to provide more reliable evaluations
 and to analyze the consistency of the grading model.
+
+Now supports both traditional folder-based submissions and JSON-formatted submissions.
 """
 
 import os
@@ -29,9 +31,10 @@ except ImportError:
 # Import AssignmentGrader with error handling
 try:
     from grader import AssignmentGrader
+    from json_processor import JsonSubmissionProcessor, process_json_submission
 except ImportError as e:
-    print(f"Error importing grader: {e}")
-    print("Please make sure the grader.py file is in the same directory")
+    print(f"Error importing required modules: {e}")
+    print("Please make sure the grader.py and json_processor.py files are in the same directory")
     sys.exit(1)
 
 def process_question_folder(grader, question_folder, output_folder, student_name, num_runs=10):
@@ -330,11 +333,152 @@ def create_summary_report(aggregated_data, student_name, question_number):
     
     return report
 
+def process_json_submission_and_grade(grader, json_file_path, submission_dir, output_base_dir, student_name, num_runs=10):
+    """
+    Process a JSON-formatted submission and grade all questions
+    
+    Args:
+        grader: AssignmentGrader instance
+        json_file_path: Path to the JSON submission file
+        submission_dir: Directory containing question folders with rubrics
+        output_base_dir: Base directory for output files
+        student_name: Name of the student
+        num_runs: Number of times to run the grading process per question
+    
+    Returns:
+        Dict containing overall results
+    """
+    print(f"\nProcessing JSON submission: {json_file_path}")
+    
+    # Create a temporary directory to store extracted submissions
+    tmp_dir = os.path.join(output_base_dir, "extracted_submissions")
+    os.makedirs(tmp_dir, exist_ok=True)
+    
+    # Process the JSON submission to extract questions and match with rubrics
+    try:
+        processor = JsonSubmissionProcessor(json_file_path, submission_dir)
+        grading_data = processor.prepare_questions_for_grading()
+        
+        print(f"Extracted {len(grading_data)} questions from JSON submission")
+    except Exception as e:
+        print(f"Error processing JSON submission: {e}")
+        return None
+    
+    # Process each question
+    all_question_results = {}
+    
+    for question_data in grading_data:
+        question_num = question_data["question_number"]
+        output_folder = os.path.join(output_base_dir, f"q{question_num}")
+        os.makedirs(output_folder, exist_ok=True)
+        
+        print(f"\nGrading Question {question_num}")
+        print("=" * 50)
+        
+        # Lists to store all run results
+        all_results = []
+        all_reports = []
+        
+        print(f"Running {num_runs} grading iterations for Question {question_num}...")
+        
+        # Process the assignment multiple times
+        for run_num in range(1, num_runs + 1):
+            print(f"  Run {run_num}/{num_runs}...")
+            
+            try:
+                # Grade the assignment
+                result = grader.grade_assignment(
+                    assignment_context=question_data["assignment_context"],
+                    rubric=question_data["rubric"],
+                    submission=question_data["submission"],
+                    image_path=question_data.get("image_path")
+                )
+                
+                # Generate the report for this run
+                report = grader.generate_report(
+                    result=result,
+                    student_name=student_name,
+                    assignment_name=f"Question {question_num} - Run {run_num}"
+                )
+                
+                # Save this run's results and report
+                run_json_file = os.path.join(output_folder, f"run_{run_num}_results{question_num}.json")
+                with open(run_json_file, 'w') as f:
+                    json.dump({
+                        "criteria_scores": result.criteria_scores,
+                        "total_score": result.total_score,
+                        "feedback": result.feedback,
+                        "overall_comments": result.overall_comments
+                    }, f, indent=2)
+                
+                run_report_file = os.path.join(output_folder, f"run_{run_num}_report{question_num}.txt")
+                with open(run_report_file, 'w') as f:
+                    f.write(report)
+                
+                # Store results for aggregation
+                all_results.append(result)
+                all_reports.append(report)
+                
+                print(f"    Completed run {run_num} with total score: {result.total_score}")
+                
+            except Exception as e:
+                print(f"    Error in run {run_num}: {str(e)}")
+                continue
+        
+        # Check if we have any successful runs
+        if not all_results:
+            print(f"Error: All runs failed for Question {question_num}")
+            continue
+        
+        print(f"Aggregating results from {len(all_results)} successful runs...")
+        
+        # Aggregate the results
+        aggregated_data = aggregate_results(all_results, question_num)
+        
+        # Save the aggregated results
+        agg_json_file = os.path.join(output_folder, f"aggregated_results{question_num}.json")
+        with open(agg_json_file, 'w') as f:
+            json.dump(aggregated_data, f, indent=2)
+        
+        print(f"Aggregated results saved to {agg_json_file}")
+        
+        # Create a summary report
+        summary_report = create_summary_report(aggregated_data, student_name, question_num)
+        summary_file = os.path.join(output_folder, f"summary_report{question_num}.txt")
+        with open(summary_file, 'w') as f:
+            f.write(summary_report)
+        
+        print(f"Summary report saved to {summary_file}")
+        
+        all_question_results[str(question_num)] = {
+            "median_score": aggregated_data["total_score_stats"]["median"],
+            "mean_score": aggregated_data["total_score_stats"]["mean"]
+        }
+    
+    # Generate overall summary
+    if all_question_results:
+        overall_summary = {
+            "student_name": student_name,
+            "question_results": all_question_results,
+            "total_median_score": sum(q["median_score"] for q in all_question_results.values()),
+            "total_mean_score": sum(q["mean_score"] for q in all_question_results.values()),
+            "submission_type": "json",
+            "json_file": os.path.basename(json_file_path)
+        }
+        
+        with open(os.path.join(output_base_dir, "overall_summary.json"), 'w') as f:
+            json.dump(overall_summary, f, indent=2)
+        
+        print("\nOverall summary saved to overall_summary.json")
+        return overall_summary
+        
+    return None
+
 def process_all_questions(api_key=None, provider="gemini", gemini_model_name=None, openrouter_model_name=None, 
                         submission_dir=None, output_base_dir=None, student_name="Student", 
-                        num_runs=10, temperature=0.1):
+                        num_runs=10, temperature=0.1, json_file=None):
     """
-    Process all questions in the submission directory
+    Process all questions in the submission directory or from a JSON file
     
     Args:
         api_key: API key for the selected provider
@@ -346,6 +490,7 @@ def process_all_questions(api_key=None, provider="gemini", gemini_model_name=Non
         student_name: Name of the student
         num_runs: Number of times to run the grading process per question
         temperature: Temperature setting for the model
+        json_file: Optional path to a JSON submission file
     """
     # Default paths if not provided
     if not submission_dir:
@@ -388,7 +533,22 @@ def process_all_questions(api_key=None, provider="gemini", gemini_model_name=Non
     
     print(f"Grading using {provider.upper()} model: {gemini_model_name if provider == 'gemini' else openrouter_model_name}")
     
-    # Find all question folders
+    # If JSON file is provided, process it
+    if json_file:
+        if not os.path.exists(json_file):
+            print(f"Error: JSON file {json_file} not found")
+            return
+            
+        return process_json_submission_and_grade(
+            grader,
+            json_file,
+            submission_dir,
+            output_base_dir,
+            student_name,
+            num_runs
+        )
+    
+    # Otherwise, process traditional question folders
     question_folders = sorted(glob.glob(os.path.join(submission_dir, "question*")))
     
     if not question_folders:
@@ -432,7 +592,8 @@ def process_all_questions(api_key=None, provider="gemini", gemini_model_name=Non
             "total_median_score": sum(q["median_score"] for q in all_question_results.values()),
             "total_mean_score": sum(q["mean_score"] for q in all_question_results.values()),
             "provider": provider,
-            "model": gemini_model_name if provider == "gemini" else openrouter_model_name
+            "model": gemini_model_name if provider == "gemini" else openrouter_model_name,
+            "submission_type": "folder"
         }
         
         with open(os.path.join(output_base_dir, "overall_summary.json"), 'w') as f:
@@ -441,6 +602,7 @@ def process_all_questions(api_key=None, provider="gemini", gemini_model_name=Non
         print("\nOverall summary saved to overall_summary.json")
     
     print("\nBatch grading complete!")
+    return overall_summary
 
 if __name__ == "__main__":
     print("Assignment Batch Grader")
@@ -448,7 +610,7 @@ if __name__ == "__main__":
     
     # Interactive model selection
     while True:
-        provider = input("Select LLM provider (gemini/openrouter) [default: openrouter]: ").lower() or "openrouter"
+        provider = input("Select LLM provider (gemini/openrouter) [default: gemini]: ").lower() or "gemini"
         if provider in ["gemini", "openrouter"]:
             break
         print("Invalid option. Please enter 'gemini' or 'openrouter'.")
@@ -498,8 +660,23 @@ if __name__ == "__main__":
         print("Invalid input. Using default value of 10 runs.")
         num_runs = 10
     
-    # Get submission directory
-    submission_dir = input("Enter submission directory path [default: submission]: ") or "submission"
+    # Ask for input type (folder or JSON)
+    input_type = input("Enter input type (folder/json) [default: folder]: ").lower() or "folder"
+    
+    json_file = None
+    submission_dir = "submission"
+    
+    if input_type == "json":
+        json_file = input("Enter path to JSON submission file: ")
+        if not json_file or not os.path.exists(json_file):
+            print(f"Error: JSON file not found or not specified")
+            sys.exit(1)
+            
+        # Still need submission_dir for rubrics
+        submission_dir = input("Enter submission directory with rubrics [default: submission]: ") or "submission"
+    else:
+        # Get submission directory for folder-based input
+        submission_dir = input("Enter submission directory path [default: submission]: ") or "submission"
     
     # Get output directory
     output_dir = input("Enter output directory path [default: .]: ") or "."
@@ -526,5 +703,6 @@ if __name__ == "__main__":
         output_base_dir=output_dir,
         student_name=student_name,
         num_runs=num_runs,
-        temperature=temperature
+        temperature=temperature,
+        json_file=json_file
     )
