@@ -333,7 +333,7 @@ def create_summary_report(aggregated_data, student_name, question_number):
     
     return report
 
-def process_json_submission_and_grade(grader, json_file_path, submission_dir, output_base_dir, student_name, num_runs=10):
+def process_json_submission_and_grade(grader, json_file_path, submission_dir, output_base_dir, num_runs=10):
     """
     Process a JSON-formatted submission and grade all questions
     
@@ -342,7 +342,6 @@ def process_json_submission_and_grade(grader, json_file_path, submission_dir, ou
         json_file_path: Path to the JSON submission file
         submission_dir: Directory containing question folders with rubrics
         output_base_dir: Base directory for output files
-        student_name: Name of the student
         num_runs: Number of times to run the grading process per question
     
     Returns:
@@ -350,16 +349,27 @@ def process_json_submission_and_grade(grader, json_file_path, submission_dir, ou
     """
     print(f"\nProcessing JSON submission: {json_file_path}")
     
-    # Create a temporary directory to store extracted submissions
-    tmp_dir = os.path.join(output_base_dir, "extracted_submissions")
-    os.makedirs(tmp_dir, exist_ok=True)
-    
     # Process the JSON submission to extract questions and match with rubrics
     try:
         processor = JsonSubmissionProcessor(json_file_path, submission_dir)
         grading_data = processor.prepare_questions_for_grading()
         
         print(f"Extracted {len(grading_data)} questions from JSON submission")
+        
+        # Get student name from the JSON metadata
+        student_name = processor.student_name
+        print(f"Student name from JSON: {student_name}")
+        
+        # Use the JSON filename as the roll number for the output directory
+        roll_number = os.path.splitext(os.path.basename(json_file_path))[0]
+        print(f"Using roll number '{roll_number}' (from filename) for output directory")
+        
+        # Set the output directory using roll number
+        output_base_dir = os.path.join(output_base_dir, roll_number)
+        
+        # Create a temporary directory to store extracted submissions
+        tmp_dir = os.path.join(output_base_dir, "extracted_submissions")
+        os.makedirs(tmp_dir, exist_ok=True)
     except Exception as e:
         print(f"Error processing JSON submission: {e}")
         return None
@@ -459,6 +469,8 @@ def process_json_submission_and_grade(grader, json_file_path, submission_dir, ou
     if all_question_results:
         overall_summary = {
             "student_name": student_name,
+            "student_number": processor.student_number,
+            "roll_number": roll_number,
             "question_results": all_question_results,
             "total_median_score": sum(q["median_score"] for q in all_question_results.values()),
             "total_mean_score": sum(q["mean_score"] for q in all_question_results.values()),
@@ -475,8 +487,7 @@ def process_json_submission_and_grade(grader, json_file_path, submission_dir, ou
     return None
 
 def process_all_questions(api_key=None, provider="gemini", gemini_model_name=None, openrouter_model_name=None, 
-                        submission_dir=None, output_base_dir=None, student_name="Student", 
-                        num_runs=10, temperature=0.1, json_file=None):
+                        submission_dir=None, output_base_dir=None, num_runs=10, temperature=0.1, json_file=None):
     """
     Process all questions in the submission directory or from a JSON file
     
@@ -487,7 +498,6 @@ def process_all_questions(api_key=None, provider="gemini", gemini_model_name=Non
         openrouter_model_name: Name of the OpenRouter model to use
         submission_dir: Path to submission directory containing question folders
         output_base_dir: Base directory for output files
-        student_name: Name of the student
         num_runs: Number of times to run the grading process per question
         temperature: Temperature setting for the model
         json_file: Optional path to a JSON submission file
@@ -544,7 +554,6 @@ def process_all_questions(api_key=None, provider="gemini", gemini_model_name=Non
             json_file,
             submission_dir,
             output_base_dir,
-            student_name,
             num_runs
         )
     
@@ -646,9 +655,6 @@ if __name__ == "__main__":
             print("Error: OPENROUTER_API_KEY environment variable not set")
             sys.exit(1)
     
-    # Get student name
-    student_name = input("Enter student name (leave blank for 'Student'): ") or "Student"
-    
     # Get number of runs
     try:
         runs_input = input("Enter number of grading runs per question (default: 10): ") or "10"
@@ -677,9 +683,12 @@ if __name__ == "__main__":
     else:
         # Get submission directory for folder-based input
         submission_dir = input("Enter submission directory path [default: submission]: ") or "submission"
+        
+        # For folder-based input, we still need student name
+        student_name = input("Enter student name (leave blank for 'Student'): ") or "Student"
     
-    # Get output directory
-    output_dir = input("Enter output directory path [default: .]: ") or "."
+    # Output directory is always the current directory when using JSON
+    output_dir = "."
     
     print(f"Using provider: {provider}")
     if provider == "gemini":
@@ -694,15 +703,29 @@ if __name__ == "__main__":
         sys.exit(1)
     
     # Run the batch grading
-    process_all_questions(
-        api_key=api_key,
-        provider=provider,
-        gemini_model_name=gemini_model_name,
-        openrouter_model_name=openrouter_model_name,
-        submission_dir=submission_dir,
-        output_base_dir=output_dir,
-        student_name=student_name,
-        num_runs=num_runs,
-        temperature=temperature,
-        json_file=json_file
-    )
+    if input_type == "json":
+        process_all_questions(
+            api_key=api_key,
+            provider=provider,
+            gemini_model_name=gemini_model_name,
+            openrouter_model_name=openrouter_model_name,
+            submission_dir=submission_dir,
+            output_base_dir=output_dir,
+            num_runs=num_runs,
+            temperature=temperature,
+            json_file=json_file
+        )
+    else:
+        # For folder-based input
+        process_all_questions(
+            api_key=api_key,
+            provider=provider,
+            gemini_model_name=gemini_model_name,
+            openrouter_model_name=openrouter_model_name,
+            submission_dir=submission_dir,
+            output_base_dir=output_dir,
+            student_name=student_name,
+            num_runs=num_runs,
+            temperature=temperature,
+            json_file=None
+        )
